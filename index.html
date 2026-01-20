@@ -1,0 +1,521 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Unit Circle: sin(θ) and cos(θ)</title>
+<style>
+  html, body { margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; }
+  .panel { margin: 12px 12px 0; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  
+  .panel label {
+  font-size: 24px;        /* was 14px */
+  color: #0a2540;
+}
+
+.panel input[type="number"] {
+  width: 120px;
+  padding: 6px 8px;
+  font-size: 24px;        /* was 14px */
+}
+
+  
+  .panel .group { display:flex; gap:10px; align-items:center; }
+  canvas { display: block; border: 1px solid #ccc; margin: 12px; touch-action: none; }
+  
+#info {
+  margin: 0 12px 12px;
+  background: #f5f7fa;
+  padding: 10px 12px;     /* slightly more breathing room */
+  border-radius: 6px;
+  display: inline-block;
+  font-size: 24px;        /* new */
+  line-height: 1.35;      /* improves readability */
+}
+
+
+  footer {
+  margin: 8px 12px 24px;
+  font-size: 24px;
+  color: #6b7280; /* neutral grey */
+  text-align: right;
+}
+
+</style>
+</head>
+
+  <footer>
+  © 2026 Dhriti Bhattacharyya · Interactive Unit Circle Visualisation  
+  <br>
+  Licensed under CC BY–NC 4.0
+</footer>
+
+<body>
+
+<div class="panel">
+  <div class="group">
+    <label for="thetaInput"><b>θ</b>:</label>
+    <input id="thetaInput" type="number" step="0.1" value="30">
+  </div>
+
+  <div class="group">
+    <label><input type="radio" name="units" value="deg" checked> degrees</label>
+    <label><input type="radio" name="units" value="rad"> radians</label>
+  </div>
+</div>
+
+<canvas id="c" width="1100" height="900"></canvas>
+<div id="info"></div>
+
+<script>
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+const info = document.getElementById("info");
+
+const thetaInput = document.getElementById("thetaInput");
+const unitRadios = Array.from(document.querySelectorAll('input[name="units"]'));
+
+function getUnits() {
+  return unitRadios.find(r => r.checked)?.value || "deg";
+}
+
+// =====================
+// Layout / scales
+// =====================
+const R = 120;
+const scaleVal = R;
+
+const cx = 220, cy = 220;
+
+const sinX0 = cx + R + 120;
+const sinY0 = cy;
+
+const cosX0 = cx;
+const cosY0 = cy + R + 120;
+
+// px per rad (chosen to fit 0..2π vertically in cos plot)
+const scaleTheta = 60;
+
+let theta = Math.PI / 6; // 30°
+let dragging = false;
+
+// =====================
+// Helpers
+// =====================
+function deg(rad) { return rad * 180 / Math.PI; }
+function rad(degVal) { return degVal * Math.PI / 180; }
+function normTheta(t) {
+  t = t % (Math.PI * 2);
+  if (t < 0) t += Math.PI * 2;
+  return t;
+}
+
+function drawLabel(text, x, y, align="left", baseline="alphabetic") {
+  ctx.save();
+  ctx.fillStyle = "#0a2540";
+  ctx.font = "16px system-ui, sans-serif";
+  ctx.textAlign = align;
+  ctx.textBaseline = baseline;
+  ctx.fillText(text, x, y);
+  ctx.restore();
+}
+
+function drawTick(text, x, y, align="center", baseline="top") {
+  ctx.save();
+  ctx.fillStyle = "#0a2540";
+  ctx.font = "14px system-ui, sans-serif";
+  ctx.textAlign = align;
+  ctx.textBaseline = baseline;
+  ctx.fillText(text, x, y);
+  ctx.restore();
+}
+function drawValueTicksVertical(xAxis, y0, scaleVal) {
+  // sin(θ) value axis: ticks from -1 to +1 every 0.1
+  ctx.save();
+  ctx.strokeStyle = "#0a2540";   // dark so you can see them
+  ctx.fillStyle = "#0a2540";
+  ctx.lineWidth = 1;
+  ctx.font = "12px system-ui, sans-serif";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+
+  for (let i = -10; i <= 10; i++) {
+    const v = i / 10;                 // -1.0 .. +1.0
+    const y = y0 - v * scaleVal;
+
+    const major = (i % 5 === 0);      // every 0.5 is major
+    const tickLen = major ? 10 : 6;
+
+    ctx.beginPath();
+    ctx.moveTo(xAxis - tickLen, y);
+    ctx.lineTo(xAxis + tickLen, y);
+    ctx.stroke();
+
+    if (major) {
+      const label = (v === 0 ? "0.0" : v.toFixed(1));
+      ctx.fillText(label, xAxis - tickLen - 6, y);
+    }
+  }
+  ctx.restore();
+}
+
+function drawValueTicksHorizontal(x0, yAxis, scaleVal) {
+  // cos(θ) value axis (horizontal): ticks from -1 to +1 every 0.1
+  ctx.save();
+  ctx.strokeStyle = "#0a2540";
+  ctx.fillStyle = "#0a2540";
+  ctx.lineWidth = 1;
+  ctx.font = "12px system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+
+  for (let i = -10; i <= 10; i++) {
+    const v = i / 10;
+    const x = x0 + v * scaleVal;
+
+    const major = (i % 5 === 0);
+    const tickLen = major ? 10 : 6;
+
+    ctx.beginPath();
+    ctx.moveTo(x, yAxis - tickLen);
+    ctx.lineTo(x, yAxis + tickLen);
+    ctx.stroke();
+
+    if (major) {
+      const label = (v === 0 ? "0.0" : v.toFixed(1));
+      ctx.fillText(label, x, yAxis + tickLen + 3);
+    }
+  }
+  ctx.restore();
+}
+
+ 
+function drawAxesCircle() {
+  ctx.strokeStyle = "#9bb6e0";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(20, cy);
+  ctx.lineTo(cx + R + 60, cy);
+  ctx.moveTo(cx, 20);
+  ctx.lineTo(cx, cy + R + 60);
+  ctx.stroke();
+
+  drawLabel("x", cx + R + 55, cy - 6, "left", "alphabetic");
+  drawLabel("y", cx + 6, 22, "left", "top");
+}
+
+function drawAxesUpRight(x0, y0) {
+  ctx.strokeStyle = "#9bb6e0";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(x0, y0); ctx.lineTo(canvas.width - 20, y0);
+  ctx.moveTo(x0, y0); ctx.lineTo(x0, 20);
+  ctx.stroke();
+
+  // axis labels
+  drawLabel("θ", canvas.width - 26, y0 - 8, "right", "alphabetic");
+  drawLabel("sin(θ)", x0 - 8, 24, "right", "top");
+
+  // π ticks along θ axis (0, π/2, π, 3π/2, 2π)
+  const ticks = [
+    {t: 0,           label: "0"},
+    {t: Math.PI/2,   label: "π/2"},
+    {t: Math.PI,     label: "π"},
+    {t: 3*Math.PI/2, label: "3π/2"},
+    {t: 2*Math.PI,   label: "2π"},
+  ];
+  ctx.strokeStyle = "#9bb6e0";
+  ctx.lineWidth = 1;
+  ticks.forEach(({t,label}) => {
+    const px = x0 + t * scaleTheta;
+    ctx.beginPath();
+    ctx.moveTo(px, y0 - 6);
+    ctx.lineTo(px, y0 + 6);
+    ctx.stroke();
+    drawTick(label, px, y0 + 10, "center", "top");
+  });
+}
+
+function drawAxesDownRight(x0, y0) {
+  ctx.strokeStyle = "#9bb6e0";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(x0, y0); ctx.lineTo(canvas.width - 20, y0);
+  ctx.moveTo(x0, y0); ctx.lineTo(x0, canvas.height - 20);
+  ctx.stroke();
+
+  // labels
+  drawLabel("cos(θ)", canvas.width - 26, y0 - 8, "right", "alphabetic");
+  drawLabel("θ", x0 + 10, canvas.height - 26, "left", "bottom");
+
+  // π ticks along θ axis (vertical, down)
+  const ticks = [
+    {t: 0,           label: "0"},
+    {t: Math.PI/2,   label: "π/2"},
+    {t: Math.PI,     label: "π"},
+    {t: 3*Math.PI/2, label: "3π/2"},
+    {t: 2*Math.PI,   label: "2π"},
+  ];
+  ctx.strokeStyle = "#9bb6e0";
+  ctx.lineWidth = 1;
+  ticks.forEach(({t,label}) => {
+    const py = y0 + t * scaleTheta;
+    ctx.beginPath();
+    ctx.moveTo(x0 - 6, py);
+    ctx.lineTo(x0 + 6, py);
+    ctx.stroke();
+    // label to the left of axis
+    drawTick(label, x0 - 10, py, "right", "middle");
+  });
+}
+
+function drawThetaArc(thetaRad) {
+  const arcR = 38;
+  ctx.save();
+  ctx.strokeStyle = "#9bb6e0";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(cx, cy, arcR, 0, -thetaRad, true);
+  ctx.stroke();
+  ctx.restore();
+
+  const mid = thetaRad / 2;
+  const tx = cx + (arcR + 18) * Math.cos(mid);
+  const ty = cy - (arcR + 18) * Math.sin(mid);
+  
+  ctx.save();
+ctx.fillStyle = "#0a2540";
+ctx.font = "24px system-ui, sans-serif";   // was 16px via drawLabel
+ctx.textAlign = "center";
+ctx.textBaseline = "middle";
+ctx.fillText(`θ = ${deg(thetaRad).toFixed(1)}°`, tx, ty);
+ctx.restore();
+
+}
+
+// =====================
+// Main draw
+// =====================
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  const x = Math.cos(theta);
+  const y = Math.sin(theta);
+
+var tanValue;
+if (Math.abs(x) < 1e-6) {
+  tanValue = null;
+} else {
+  tanValue = y / x;
+}
+
+
+  drawAxesCircle();
+
+  // circle
+  ctx.strokeStyle = "#0a2540";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // radius
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + R * x, cy - R * y);
+  ctx.stroke();
+
+  // point
+  ctx.fillStyle = "#f59e0b";
+  ctx.beginPath();
+  ctx.arc(cx + R * x, cy - R * y, 6, 0, Math.PI * 2);
+  ctx.fill();
+
+  // theta arc + label
+  drawThetaArc(theta);
+
+  // sine plot
+  drawAxesUpRight(sinX0, sinY0);
+
+  drawValueTicksVertical(sinX0, sinY0, scaleVal);
+
+
+  ctx.strokeStyle = "#0a2540";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let t = 0; t <= Math.PI * 2; t += 0.01) {
+    const px = sinX0 + t * scaleTheta;
+    const py = sinY0 - Math.sin(t) * scaleVal;
+    if (t === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+  drawLabel("sin(θ)", sinX0 + 10, sinY0 - scaleVal - 10, "left", "bottom");
+
+  // sine projection
+  ctx.setLineDash([5, 5]);
+  ctx.strokeStyle = "#f59e0b";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx + R * x, cy - R * y);
+  ctx.lineTo(sinX0 + theta * scaleTheta, sinY0 - y * scaleVal);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+// --- vertical projection from sin(θ) curve to θ-axis (shows |sinθ|) ---
+ctx.setLineDash([4, 4]);
+ctx.strokeStyle = "#64748b"; // neutral grey
+ctx.lineWidth = 1.5;
+ctx.beginPath();
+ctx.moveTo(
+  sinX0 + theta * scaleTheta,      // x at θ
+  sinY0 - y * scaleVal             // y at sin(θ)
+);
+ctx.lineTo(
+  sinX0 + theta * scaleTheta,      // same θ
+  sinY0                            // θ-axis
+);
+ctx.stroke();
+ctx.setLineDash([]);
+
+
+  // rotated cosine plot
+  drawAxesDownRight(cosX0, cosY0);
+
+  drawValueTicksHorizontal(cosX0, cosY0, scaleVal);
+
+
+  ctx.strokeStyle = "#0a2540";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let t = 0; t <= Math.PI * 2; t += 0.01) {
+    const px = cosX0 + Math.cos(t) * scaleVal;
+    const py = cosY0 + t * scaleTheta;
+    if (t === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+  drawLabel("cos(θ)", cosX0 + scaleVal + 10, cosY0 + 14, "left", "top");
+
+  // cosine projection
+  ctx.setLineDash([5, 5]);
+  ctx.strokeStyle = "#f59e0b";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx + R * x, cy - R * y);
+  ctx.lineTo(cosX0 + x * scaleVal, cosY0 + theta * scaleTheta);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+// --- horizontal projection from cos(θ) curve to θ-axis (shows |cosθ|) ---
+ctx.setLineDash([4, 4]);
+ctx.strokeStyle = "#64748b"; // neutral grey
+ctx.lineWidth = 1.5;
+ctx.beginPath();
+ctx.moveTo(
+  cosX0 + x * scaleVal,            // x at cos(θ)
+  cosY0 + theta * scaleTheta       // y at θ
+);
+ctx.lineTo(
+  cosX0,                           // θ-axis
+  cosY0 + theta * scaleTheta
+);
+ctx.stroke();
+ctx.setLineDash([]);
+
+
+  // info readout
+  var infoText = "";
+infoText += "θ = " + deg(theta).toFixed(1) + "° (" + theta.toFixed(3) + " rad)<br>";
+infoText += "sin(θ) = " + y.toFixed(3) + "<br>";
+infoText += "cos(θ) = " + x.toFixed(3) + "<br>";
+
+if (tanValue === null) {
+  infoText += "tan(θ) = undefined";
+} else {
+  infoText += "tan(θ) = " + tanValue.toFixed(3);
+}
+
+info.innerHTML = infoText;
+
+
+// =====================
+// Interaction
+// =====================
+function getPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  const p = e.touches ? e.touches[0] : e;
+  return { x: p.clientX - rect.left, y: p.clientY - rect.top };
+}
+
+function setThetaFromPointer(px, py) {
+  const dx = px - cx;
+  const dy = cy - py;
+  theta = normTheta(Math.atan2(dy, dx));
+  syncInputFromTheta();
+}
+
+function syncInputFromTheta() {
+  const units = getUnits();
+  if (units === "deg") thetaInput.value = deg(theta).toFixed(1);
+  else thetaInput.value = theta.toFixed(3);
+}
+
+function setThetaFromInput() {
+  const units = getUnits();
+  const v = Number(thetaInput.value);
+  if (!Number.isFinite(v)) return;
+
+  theta = (units === "deg") ? rad(v) : v;
+  theta = normTheta(theta);
+  draw();
+}
+
+// Mouse
+canvas.addEventListener("mousedown", e => {
+  dragging = true;
+  const p = getPos(e);
+  setThetaFromPointer(p.x, p.y);
+  draw();
+});
+window.addEventListener("mousemove", e => {
+  if (!dragging) return;
+  const p = getPos(e);
+  setThetaFromPointer(p.x, p.y);
+  draw();
+});
+window.addEventListener("mouseup", () => dragging = false);
+
+// Touch
+canvas.addEventListener("touchstart", e => {
+  e.preventDefault();
+  dragging = true;
+  const p = getPos(e);
+  setThetaFromPointer(p.x, p.y);
+  draw();
+}, { passive: false });
+
+canvas.addEventListener("touchmove", e => {
+  e.preventDefault();
+  if (!dragging) return;
+  const p = getPos(e);
+  setThetaFromPointer(p.x, p.y);
+  draw();
+}, { passive: false });
+
+canvas.addEventListener("touchend", () => dragging = false);
+
+// Input box + units
+thetaInput.addEventListener("input", setThetaFromInput);
+unitRadios.forEach(r => r.addEventListener("change", () => {
+  // When units change, rewrite input value for current theta
+  syncInputFromTheta();
+}));
+
+// Initial render
+syncInputFromTheta();
+draw();
+</script>
+
+</body>
+</html>
